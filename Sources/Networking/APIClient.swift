@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import Combine
 
 typealias CompletionHandler<Value> = (ResultType<Value>) -> Void
 typealias CompletionError = (Error?) -> Void
@@ -47,7 +48,7 @@ public extension APIClient {
     }
     
     // Construct the URL then the API Request
-    func buildRequest(for request: APIRequest, token: String) -> URLRequest? {
+    func buildRequest(for request: APIRequest, token: String?) -> URLRequest? {
         guard let url = buildUrl(for: request) else {
             return nil
         }
@@ -55,8 +56,9 @@ public extension APIClient {
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = request.httpMethod.rawValue.uppercased()
         urlRequest.httpBody = request.httpBody
-        urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        
+        if let token = token {
+            urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         
         request.headers?.forEach({ urlRequest.setValue($1, forHTTPHeaderField: $0) })
         
@@ -84,113 +86,24 @@ public extension APIClient {
     }
     
     @discardableResult
-    func send<T: Codable>(_ request: APIRequest, completion: @escaping (ResultCompletion<T>)) -> URLSessionDataTask? {
+    func send<T: Codable>(_ request: APIRequest) -> AnyPublisher<T, Error>? {
         
-        let errorCallback: (APIErrorHandler) -> Void = {
-            completion(.failure($0))
-        }
-        
-        guard let token = getToken() else {
-            errorCallback(APIErrorHandler.unauthorized)
+        guard let urlRequest = buildRequest(for: request, token: getToken()) else {
             return nil
         }
         
-        guard let urlRequest = buildRequest(for: request, token: token) else {
-            errorCallback(APIErrorHandler.client)
-            return nil
-        }
-        
-        let task = session.dataTask(with: urlRequest) { (data, response, error) in
-            guard let httpResponse = response as? HTTPURLResponse else { return }
-            
-            print(clientPrintKey + "\n \(String(describing: response))")
-            
-            let statusCode = ResponseStatus.init(code: httpResponse.statusCode)
-            
-            switch statusCode {
-            case .ok:
-                break
-            case .unauthorized:
-                errorCallback(APIErrorHandler.unauthorized)
-            case .notFound:
-                errorCallback(APIErrorHandler.notFound)
-                return
-            default:
-                if let data = data {
-                    let failed = try? JSONDecoder().decode(APIFailedResponse.self, from: data)
-                    print(clientPrintKey + "\n \(String(describing: failed?.message))")
-                }
-                errorCallback(APIErrorHandler.network(request: request, statusCode: statusCode))
-                return
+        let cancellable = session
+            .dataTaskPublisher(for: urlRequest)
+            .tryMap { element -> Data in
+                guard let httpResponse = element.response as? HTTPURLResponse,
+                    httpResponse.statusCode == 200 else {
+                        throw URLError(.badServerResponse)
+                    }
+                return element.data
             }
-            
-            guard let data = data else {
-                errorCallback(APIErrorHandler.noData)
-                return
-            }
-            
-            do {
-                print(data.description)
-                completion(.success(try JSONDecoder().decode(T.self, from: data)))
-            } catch let error {
-                errorCallback(APIErrorHandler.decoding(reason: error.localizedDescription))
-            }
-        }
+            .decode(type: T.self, decoder: JSONDecoder())
+            .eraseToAnyPublisher()
         
-        defer { task.resume() }
-        
-        return task
-    }
-    
-    @discardableResult
-    func send(_ request: APIRequest, completion: @escaping (StatusResultCompletion)) -> URLSessionDataTask? {
-        
-        let errorCallback: (APIErrorHandler) -> Void = {
-            completion(.failure($0))
-        }
-        
-        guard let token = getToken() else {
-            errorCallback(APIErrorHandler.unauthorized)
-            return nil
-        }
-        
-        guard let urlRequest = buildRequest(for: request, token: token) else {
-            errorCallback(APIErrorHandler.client)
-            return nil
-        }
-        
-        let task = session.dataTask(with: urlRequest) { (data, response, error) in
-            guard let httpResponse = response as? HTTPURLResponse else { return }
-            
-            print(clientPrintKey + "\n \(String(describing: response)) \n===================================")
-            
-            let statusCode = ResponseStatus.init(code: httpResponse.statusCode)
-            
-            switch statusCode {
-            case .ok:
-                break
-            case .unauthorized:
-                errorCallback(APIErrorHandler.unauthorized)
-            case .notFound:
-                errorCallback(APIErrorHandler.notFound)
-            default:
-                if let data = data {
-                    let failed = try? JSONDecoder().decode(APIFailedResponse.self, from: data)
-                    print(clientPrintKey + "\n \(String(describing: failed?.message))")
-                }
-                errorCallback(APIErrorHandler.network(request: request, statusCode: statusCode))
-            }
-            
-            guard data != nil else {
-                errorCallback(APIErrorHandler.noData)
-                return
-            }
-            
-            completion(.success(statusCode))
-        }
-        
-        defer { task.resume() }
-        
-        return task
+        return cancellable
     }
 }
