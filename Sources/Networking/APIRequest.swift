@@ -23,11 +23,14 @@ public protocol APIRequest {
 
 extension APIRequest {
     // Defaults
-    var method: RequestMethod { return .get }
-    var contentType: String { return "application/json" }
-    var queryParams: [String: String]? { return nil }
-    var body: [String: Any]? { return nil }
-    var headers: [String: String]? { return nil }
+    public var method: RequestMethod { return .get }
+    public var contentType: String { return "application/json" }
+    public var queryParams: [String: String]? { return nil }
+    public var body: Data? { return nil }
+    public var headers: [String: String]? { return nil }
+    public var queryItems: [URLQueryItem]? { return nil }
+    public var apiKey: String? { return nil }
+
 }
 
 struct APIFailedResponse: Codable {
