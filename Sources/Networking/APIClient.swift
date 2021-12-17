@@ -25,7 +25,7 @@ public protocol APIClient {
     
     func getToken() -> String?
     
-    func buildRequest<T: APIRequest>(_ request: T, token: String) -> URLRequest?
+    func buildRequest<T: APIRequest>(_ request: T) -> URLRequest?
     
     func buildUrl<T: APIRequest>(_ request: T) -> URL?
     
@@ -41,7 +41,7 @@ public extension APIClient {
     }
     
     // Construct the URL then the API Request
-    func buildRequest<T: APIRequest>(_ request: T, token: String?) -> URLRequest? {
+    func buildRequest<T: APIRequest>(_ request: T) -> URLRequest? {
         guard let url = buildUrl(request) else {
             return nil
         }
@@ -49,7 +49,7 @@ public extension APIClient {
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = request.method.rawValue.uppercased()
         urlRequest.httpBody = request.body
-        if let token = token {
+        if let token = getToken() {
             urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         
@@ -112,7 +112,7 @@ public extension APIClient {
     @discardableResult
     func send<T: APIRequest>(_ request: T) -> AnyPublisher<T.ReturnType, NetworkRequestError> {
         
-        guard let urlRequest = buildRequest(request, token: getToken()) else {
+        guard let urlRequest = buildRequest(request) else {
             return Fail(outputType: T.ReturnType.self, failure: NetworkRequestError.badRequest).eraseToAnyPublisher()
         }
         
