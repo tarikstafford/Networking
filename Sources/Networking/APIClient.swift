@@ -55,7 +55,7 @@ public extension APIClient {
         
         request.headers?.forEach({ urlRequest.setValue($1, forHTTPHeaderField: $0) })
         
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")  // the request is JSON
+        urlRequest.setValue(request.contentType, forHTTPHeaderField: "Content-Type")
         
         print(clientPrintKey + "URL REQUEST \n \(url)")
         
@@ -63,15 +63,15 @@ public extension APIClient {
     }
     
     func buildUrl<T: APIRequest>(_ request: T) -> URL? {
-        guard   let baseUrl = baseUrlComponents.url,
-            var components = URLComponents(url: baseUrl, resolvingAgainstBaseURL: true)
-            else {
-                return nil
+        guard var baseUrl = baseUrlComponents.url else {
+            return nil
         }
         
         if let path = request.path {
-            components.path = baseUrlComponents.path.appending(path)
+            baseUrl.appendPathComponent(path)
         }
+        
+        guard var components = URLComponents(url: baseUrl, resolvingAgainstBaseURL: true) else { return nil }
         
         components.queryItems = request.queryItems
         
