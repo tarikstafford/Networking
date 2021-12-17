@@ -29,7 +29,7 @@ public protocol APIClient {
     
     func buildUrl<T: APIRequest>(_ request: T) -> URL?
     
-    func send<T: APIRequest>(_ request: T) -> AnyPublisher<T.ReturnType, NetworkRequestError>?
+    func send<T: APIRequest>(_ request: T) -> AnyPublisher<T.ReturnType, NetworkRequestError>
 }
 
 public extension APIClient {
