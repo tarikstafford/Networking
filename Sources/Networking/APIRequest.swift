@@ -17,7 +17,7 @@ public protocol APIRequest {
     var path: String? { get }
     var queryItems: [URLQueryItem]? { get }
     var apiKey: String? { get }
-    
+    var cacheProtocol: URLRequest.CachePolicy { get }
     func localizedErrorDescription(statusCode: ResponseStatus) -> String?
 }
 
