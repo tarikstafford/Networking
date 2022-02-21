@@ -30,7 +30,7 @@ extension APIRequest {
     public var headers: [String: String]? { return nil }
     public var queryItems: [URLQueryItem]? { return nil }
     public var apiKey: String? { return nil }
-
+    public var cacheProtocol: URLRequest.CachePolicy { return .reloadIgnoringLocalAndRemoteCacheData }
 }
 
 struct APIFailedResponse: Codable {

@@ -49,6 +49,7 @@ public extension APIClient {
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = request.method.rawValue.uppercased()
         urlRequest.httpBody = request.body
+        urlRequest.cachePolicy = request.cacheProtocol
         if let token = getToken() {
             urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
