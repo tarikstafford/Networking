@@ -25,11 +25,13 @@ public protocol APIClient {
     
     func getToken() -> String?
     
-    func buildRequest<T: APIRequest>(_ request: T) -> URLRequest?
+    func buildRequest(_ request: Request) -> URLRequest?
     
-    func buildUrl<T: APIRequest>(_ request: T) -> URL?
+    func buildUrl(_ request: Request) -> URL?
     
-    func send<T: APIRequest>(_ request: T) -> AnyPublisher<T.ReturnType, NetworkRequestError>
+    func send<T: Codable>(_ request: Request) -> AnyPublisher<T, NetworkRequestError>
+    
+    func send(_ request: Request) -> AnyPublisher<Int, NetworkRequestError>
 }
 
 public extension APIClient {
@@ -40,8 +42,38 @@ public extension APIClient {
         return token
     }
     
-    // Construct the URL then the API Request
-    func buildRequest<T: APIRequest>(_ request: T) -> URLRequest? {
+    /// Parses a HTTP StatusCode and returns a proper error
+    /// - Parameter statusCode: HTTP status code
+    /// - Returns: Mapped Error
+    private func httpError(_ statusCode: Int) -> NetworkRequestError {
+        switch statusCode {
+        case 400: return .badRequest
+        case 401: return .unauthorized
+        case 403: return .forbidden
+        case 404: return .notFound
+        case 402, 405...499: return .error4xx(statusCode)
+        case 500: return .serverError
+        case 501...599: return .error5xx(statusCode)
+        default: return .unknownError
+        }
+    }
+    /// Parses URLSession Publisher errors and return proper ones
+    /// - Parameter error: URLSession publisher error
+    /// - Returns: Readable NetworkRequestError
+    private func handleError(_ error: Error) -> NetworkRequestError {
+        switch error {
+        case is Swift.DecodingError:
+            return .decodingError
+        case let urlError as URLError:
+            return .urlSessionFailed(urlError)
+        case let error as NetworkRequestError:
+            return error
+        default:
+            return .unknownError
+        }
+    }
+    
+    func buildRequest(_ request: Request) -> URLRequest? {
         guard let url = buildUrl(request) else {
             return nil
         }
@@ -58,12 +90,13 @@ public extension APIClient {
         
         urlRequest.setValue(request.contentType, forHTTPHeaderField: "Content-Type")
         
-        print(clientPrintKey + "URL REQUEST \n \(url)")
+        networkLogger(text: "URL \n \(url)")
+        networkLogger(text: "URL REQUEST \n \(urlRequest)")
         
         return urlRequest
     }
     
-    func buildUrl<T: APIRequest>(_ request: T) -> URL? {
+    func buildUrl(_ request: Request) -> URL? {
         guard var baseUrl = baseUrlComponents.url else {
             return nil
         }
@@ -79,59 +112,70 @@ public extension APIClient {
         return components.url
     }
     
-    /// Parses a HTTP StatusCode and returns a proper error
-        /// - Parameter statusCode: HTTP status code
-        /// - Returns: Mapped Error
-        private func httpError(_ statusCode: Int) -> NetworkRequestError {
-            switch statusCode {
-            case 400: return .badRequest
-            case 401: return .unauthorized
-            case 403: return .forbidden
-            case 404: return .notFound
-            case 402, 405...499: return .error4xx(statusCode)
-            case 500: return .serverError
-            case 501...599: return .error5xx(statusCode)
-            default: return .unknownError
-            }
-        }
-        /// Parses URLSession Publisher errors and return proper ones
-        /// - Parameter error: URLSession publisher error
-        /// - Returns: Readable NetworkRequestError
-        private func handleError(_ error: Error) -> NetworkRequestError {
-            switch error {
-            case is Swift.DecodingError:
-                return .decodingError
-            case let urlError as URLError:
-                return .urlSessionFailed(urlError)
-            case let error as NetworkRequestError:
-                return error
-            default:
-                return .unknownError
-            }
-        }
-    
     @discardableResult
-    func send<T: APIRequest>(_ request: T) -> AnyPublisher<T.ReturnType, NetworkRequestError> {
+    func send<T: Codable>(_ request: Request) -> AnyPublisher<T, NetworkRequestError> {
         
         guard let urlRequest = buildRequest(request) else {
-            return Fail(outputType: T.ReturnType.self, failure: NetworkRequestError.badRequest).eraseToAnyPublisher()
+            return Fail(outputType: T.self, failure: NetworkRequestError.badRequest).eraseToAnyPublisher()
         }
         
         let cancellable = session
             .dataTaskPublisher(for: urlRequest)
             .tryMap { element -> Data in
-                if let response = element.response as? HTTPURLResponse,
-                   !(200...299).contains(response.statusCode) {
+                
+                guard let response = element.response as? HTTPURLResponse else {
+                    throw NetworkRequestError.badRequest
+                }
+                
+                guard (200...299).contains(response.statusCode) else {
                     throw httpError(response.statusCode)
                 }
+                
+                let str = String(decoding: element.data, as: UTF8.self)
+                networkLogger(text: str)
                 return element.data
             }
-            .decode(type: T.ReturnType.self, decoder: JSONDecoder())
+            .decode(type: T.self, decoder: JSONDecoder())
             .mapError {
                 handleError($0)
             }
             .eraseToAnyPublisher()
         
         return cancellable
+    }
+    
+    @discardableResult
+    func send(_ request: Request) -> AnyPublisher<Int, NetworkRequestError> {
+        
+        guard let urlRequest = buildRequest(request) else {
+            return Fail(outputType: Int.self, failure: NetworkRequestError.badRequest).eraseToAnyPublisher()
+        }
+        
+        let cancellable = session
+            .dataTaskPublisher(for: urlRequest)
+            .tryMap { element -> Int in
+                
+                guard let response = element.response as? HTTPURLResponse else {
+                    throw NetworkRequestError.badRequest
+                }
+                
+                guard !(200...299).contains(response.statusCode) else {
+                    throw httpError(response.statusCode)
+                }
+                
+                let str = String(decoding: element.data, as: UTF8.self)
+                networkLogger(text: str)
+                return response.statusCode
+            }
+            .mapError {
+                handleError($0)
+            }
+            .eraseToAnyPublisher()
+        
+        return cancellable
+    }
+    
+    func networkLogger(text: String) {
+        print(clientPrintKey + " " + text)
     }
 }

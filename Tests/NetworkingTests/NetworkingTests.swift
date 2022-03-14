@@ -66,6 +66,26 @@ public final class FetchComicRequest: APIRequest {
     }
 }
 
+public final class FetchComicRequest2: Request {
+    public var body: Data? = nil
+    
+    public func localizedErrorDescription(statusCode: ResponseStatus) -> String? {
+        return "FAILED"
+    }
+    
+    private let endpath = "info.0.json"
+    
+    var id: Int? = nil
+    
+    public var path: String? {
+        if let id = id {
+            return "\(id)/" + endpath
+        } else {
+            return endpath
+        }
+    }
+}
+
 final class NetworkingTests: XCTestCase {
     let client = XBCDClient()
     private var cancellables: Set<AnyCancellable> = []
@@ -103,5 +123,50 @@ final class NetworkingTests: XCTestCase {
         // correct output:
         XCTAssertNil(networkError)
         XCTAssertNotNil(fetchedComic, "No comic")
+    }
+    
+    func testFetchComic2() {
+        let expectation = self.expectation(description: "FetchComic")
+        var networkError: NetworkRequestError?
+        var fetchedComic: Comic?
+        
+        client.send(FetchComicRequest2()).sink { completion in
+            switch completion {
+            case .finished:
+                break
+            case let .failure(error):
+                networkError = error
+            }
+            
+            expectation.fulfill()
+        } receiveValue: { comic in
+            fetchedComic = comic
+        }.store(in: &cancellables)
+        
+        
+        // Awaiting fulfilment of our expecation before
+        // performing our asserts:
+        waitForExpectations(timeout: 10)
+
+        // Asserting that our Combine pipeline yielded the
+        // correct output:
+        XCTAssertNil(networkError)
+        XCTAssertNotNil(fetchedComic, "No comic")
+    }
+    
+    func testJSONDecoding() {
+        let value = "somelongstring"
+        let decoder = JSONDecoder()
+        
+        let dataProvider = PassthroughSubject<Data, Never>()
+        dataProvider
+            .decode(type: String.self, decoder: decoder)
+            .sink(receiveCompletion: { print ("Completion: \($0)")},
+                  receiveValue: { print ("value: \($0)") })
+            .store(in: &cancellables)
+
+        dataProvider.send(Data(value.utf8))
+
+        // Prints: ".sink() data received Article(title: "My First Article", author: "Gita Kumar", pubDate: 2050-11-20 18:13:58 +0000)"
     }
 }
