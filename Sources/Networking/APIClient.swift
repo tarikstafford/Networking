@@ -159,7 +159,7 @@ public extension APIClient {
                     throw NetworkRequestError.badRequest
                 }
                 
-                guard !(200...299).contains(response.statusCode) else {
+                guard (200...299).contains(response.statusCode) else {
                     throw httpError(response.statusCode)
                 }
                 
